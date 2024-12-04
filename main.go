@@ -24,6 +24,8 @@ func main() {
 	memory := flag.Int("memory", 1024, "Memory in MB")
 	vcpus := flag.Int("vcpus", 1, "Number of virtual CPUs")
 	network := flag.String("network", "network=default", "Network configuration (e.g., 'bridge=br0' or 'network=default')")
+	efi := flag.Bool("efi", false, "Enable EFI boot")
+	secureboot := flag.Bool("secureboot", false, "Enable Secure Boot (requires -efi flag)")
 
 	// Custom usage message
 	flag.Usage = func() {
@@ -32,6 +34,13 @@ func main() {
 	}
 
 	flag.Parse()
+
+	// Check EFI and Secure Boot flags
+	if *secureboot && !*efi {
+		fmt.Println("Error: Secure Boot requires EFI to be enabled (-efi flag)")
+		flag.Usage()
+		os.Exit(1)
+	}
 
 	// Check if VM name is provided
 	args := flag.Args()
@@ -47,12 +56,19 @@ func main() {
 	createDisk(diskPath, *diskSize)
 
 	// Generate XML
-	xml := generateXML(vmName, diskPath, *memory, *vcpus, *network)
+	xml := generateXML(vmName, diskPath, *memory, *vcpus, *network, *efi, *secureboot)
 
 	// Define VM
 	defineVM(xml)
 
 	fmt.Printf("Empty VM '%s' created successfully with network: %s\n", vmName, *network)
+	if *efi {
+		fmt.Printf("EFI boot enabled")
+		if *secureboot {
+			fmt.Printf(" with Secure Boot")
+		}
+		fmt.Println()
+	}
 	fmt.Printf("Disk image created at: %s\n", diskPath)
 }
 
@@ -79,7 +95,7 @@ func createDisk(path, size string) {
 	}
 }
 
-func generateXML(name, diskPath string, memory, vcpus int, network string) string {
+func generateXML(name, diskPath string, memory, vcpus int, network string, efi, secureboot bool) string {
 	args := []string{
 		"virt-install",
 		"--name", name,
@@ -88,6 +104,15 @@ func generateXML(name, diskPath string, memory, vcpus int, network string) strin
 		"--disk", fmt.Sprintf("path=%s,format=qcow2", diskPath),
 		"--os-variant", "generic",
 		"--print-xml",
+	}
+
+	// EFI boot configuration if enabled
+	if efi {
+		if secureboot {
+			args = append(args, "--boot", "uefi,secure=yes")
+		} else {
+			args = append(args, "--boot", "uefi")
+		}
 	}
 
 	// Validate and add network configuration
